@@ -1,0 +1,67 @@
+{% extends "zerver/emails/compiled/email_base_default.html" %}
+
+{% block illustration %}
+<img src="{{ email_images_base_uri }}/email_logo.png"/>
+{% endblock %}
+
+{% block content %}
+<p>{{ _('Hi there,') }}</p>
+
+<p>{{ _('Welcome to Zulip! A few tips to get you started:') }}</p>
+<p>
+    &bull;
+    {% trans %}
+    Zulip works best when it's always open, so we suggest downloading
+    our <a href="https://zulipchat.com/apps">desktop and mobile apps</a>.
+    {% endtrans %}
+    <br/><br/>
+    {% trans %}
+    To access your account from the apps, enter this Organization URL:
+    {% endtrans %}
+</p>
+
+<p>
+    &nbsp;&nbsp;&nbsp;&nbsp;<b>{{ realm_uri }}</b>
+</p>
+<p>
+    &bull;
+    {% trans %}
+    Become a Zulip pro with a few
+    <a href="{{ keyboard_shortcuts_link }}">keyboard shortcuts</a>:
+    {% endtrans %}
+    <br/>
+    <b>n</b>: {{ _('Next unread thread') }}<br/>
+    <b>r</b>: {{ _('Reply to message under the blue box') }}<br/>
+    <b>c</b>: {{ _('Start a new topic') }}
+</p>
+<p>
+    &bull;
+    {% trans %}
+    Give our <a href="{{ getting_started_link }}">guide for new
+    {{ user_role_group }}</a> a spin.
+    {% endtrans %}
+</p>
+<p>
+    <br/>
+    {% trans %}
+    Zulip combines the real-time ease of chat with the threaded organization
+    of email. Zulip is about productivity&mdash;making communication fun and
+    easy, while avoiding the distracting and disorganized conversations of
+    chatrooms. We hope you love using Zulip as much as we do.
+    {% endtrans %}
+</p>
+
+<p>
+    {{ _("Cheers,") }}<br />
+    {{ _("Team Zulip") }}
+</p>
+
+<p>
+    {% trans %}
+    PS: Follow us on <a href="https://twitter.com/zulip">Twitter</a>,
+    star us on <a href="https://github.com/zulip/zulip">GitHub</a>, or
+    chat with us live on the
+    <a href="https://chat.zulip.org">Zulip community server</a>!
+    {% endtrans %}
+</p>
+{% endblock %}

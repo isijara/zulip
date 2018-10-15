@@ -1,120 +1,146 @@
-from django.http import HttpResponse
+from typing import Any, Dict, Optional, Union, cast
+import logging
+
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email, URLValidator
+from django.db import IntegrityError, transaction
+from django.http import HttpRequest, HttpResponse
+from django.utils import timezone
+from django.utils.translation import ugettext as _, ugettext as err_
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.views import login as django_login_page
-from django.http import HttpResponseRedirect
 
-from zerver.decorator import has_request_variables, REQ
-from zerver.lib.actions import internal_send_message
-from zerver.lib.redis_utils import get_redis_client
-from zerver.lib.response import json_success, json_error, json_response, json_method_not_allowed
-from zerver.lib.rest import rest_dispatch as _rest_dispatch
-from zerver.lib.validator import check_dict
-from zerver.models import get_realm, get_user_profile_by_email, resolve_email_to_domain, \
-        UserProfile
-from error_notify import notify_server_error, notify_browser_error
-from django.conf import settings
-import time
+from zerver.decorator import require_post, InvalidZulipServerKeyError
+from zerver.lib.exceptions import JsonableError
+from zerver.lib.push_notifications import send_android_push_notification, \
+    send_apple_push_notification
+from zerver.lib.request import REQ, has_request_variables
+from zerver.lib.response import json_error, json_success
+from zerver.lib.validator import check_int, check_string, \
+    check_capped_string, check_string_fixed_length
+from zerver.models import UserProfile
+from zerver.views.push_notifications import validate_token
+from zilencer.models import RemotePushDeviceToken, RemoteZulipServer
 
-rest_dispatch = csrf_exempt((lambda request, *args, **kwargs: _rest_dispatch(request, globals(), *args, **kwargs)))
+def validate_entity(entity: Union[UserProfile, RemoteZulipServer]) -> None:
+    if not isinstance(entity, RemoteZulipServer):
+        raise JsonableError(err_("Must validate with valid Zulip server API key"))
 
-client = get_redis_client()
+def validate_bouncer_token_request(entity: Union[UserProfile, RemoteZulipServer],
+                                   token: bytes, kind: int) -> None:
+    if kind not in [RemotePushDeviceToken.APNS, RemotePushDeviceToken.GCM]:
+        raise JsonableError(err_("Invalid token type"))
+    validate_entity(entity)
+    validate_token(token, kind)
 
-def has_enough_time_expired_since_last_message(sender_email, min_delay):
-    # This function returns a boolean, but it also has the side effect
-    # of noting that a new message was received.
-    key = 'zilencer:feedback:%s' % (sender_email,)
-    t = int(time.time())
-    last_time = client.getset(key, t)
-    if last_time is None:
-        return True
-    delay = t - int(last_time)
-    return delay > min_delay
-
-def get_ticket_number():
-    fn = '/var/tmp/.feedback-bot-ticket-number'
+@csrf_exempt
+@require_post
+@has_request_variables
+def register_remote_server(
+        request: HttpRequest,
+        zulip_org_id: str=REQ(str_validator=check_string_fixed_length(RemoteZulipServer.UUID_LENGTH)),
+        zulip_org_key: str=REQ(str_validator=check_string_fixed_length(RemoteZulipServer.API_KEY_LENGTH)),
+        hostname: str=REQ(str_validator=check_capped_string(RemoteZulipServer.HOSTNAME_MAX_LENGTH)),
+        contact_email: str=REQ(str_validator=check_string),
+        new_org_key: Optional[str]=REQ(str_validator=check_string_fixed_length(
+            RemoteZulipServer.API_KEY_LENGTH), default=None),
+) -> HttpResponse:
+    # REQ validated the the field lengths, but we still need to
+    # validate the format of these fields.
     try:
-        ticket_number = int(open(fn).read()) + 1
-    except:
-        ticket_number = 1
-    open(fn, 'w').write('%d' % ticket_number)
-    return ticket_number
+        # TODO: Ideally we'd not abuse the URL validator this way
+        url_validator = URLValidator()
+        url_validator('http://' + hostname)
+    except ValidationError:
+        raise JsonableError(_('%s is not a valid hostname') % (hostname,))
+
+    try:
+        validate_email(contact_email)
+    except ValidationError as e:
+        raise JsonableError(e.message)
+
+    remote_server, created = RemoteZulipServer.objects.get_or_create(
+        uuid=zulip_org_id,
+        defaults={'hostname': hostname, 'contact_email': contact_email,
+                  'api_key': zulip_org_key})
+
+    if not created:
+        if remote_server.api_key != zulip_org_key:
+            raise InvalidZulipServerKeyError(zulip_org_id)
+        else:
+            remote_server.hostname = hostname
+            remote_server.contact_email = contact_email
+            if new_org_key is not None:
+                remote_server.api_key = new_org_key
+            remote_server.save()
+
+    return json_success({'created': created})
 
 @has_request_variables
-def submit_feedback(request, deployment, message=REQ(validator=check_dict([]))):
-    domainish = message["sender_domain"]
-    if get_realm("zulip.com") not in deployment.realms.all():
-        domainish += " via " + deployment.name
-    subject = "%s" % (message["sender_email"],)
+def register_remote_push_device(request: HttpRequest, entity: Union[UserProfile, RemoteZulipServer],
+                                user_id: int=REQ(), token: bytes=REQ(),
+                                token_kind: int=REQ(validator=check_int),
+                                ios_app_id: Optional[str]=None) -> HttpResponse:
+    validate_bouncer_token_request(entity, token, token_kind)
+    server = cast(RemoteZulipServer, entity)
 
-    if len(subject) > 60:
-        subject = subject[:57].rstrip() + "..."
-
-    content = ''
-    sender_email = message['sender_email']
-
-    # We generate ticket numbers if it's been more than a few minutes
-    # since their last message.  This avoids some noise when people use
-    # enter-send.
-    need_ticket = has_enough_time_expired_since_last_message(sender_email, 180)
-
-    if need_ticket:
-        ticket_number = get_ticket_number()
-        content += '\n~~~'
-        content += '\nticket Z%03d (@support please ack)' % (ticket_number,)
-        content += '\nsender: %s' % (message['sender_full_name'],)
-        content += '\nemail: %s' % (sender_email,)
-        if 'sender_domain' in message:
-            content += '\nrealm: %s' % (message['sender_domain'],)
-        content += '\n~~~'
-        content += '\n\n'
-
-    content += message['content']
-
-    internal_send_message("feedback@zulip.com", "stream", "support", subject, content)
-
-    return HttpResponse(message['sender_email'])
-
-@has_request_variables
-def report_error(request, deployment, type=REQ, report=REQ(validator=check_dict([]))):
-    report['deployment'] = deployment.name
-    if type == 'browser':
-        notify_browser_error(report)
-    elif type == 'server':
-        notify_server_error(report)
-    else:
-        return json_error("Invalid type parameter")
-    return json_response({})
-
-def realm_for_email(email):
     try:
-        user = get_user_profile_by_email(email)
-        return user.realm
-    except UserProfile.DoesNotExist:
+        with transaction.atomic():
+            RemotePushDeviceToken.objects.create(
+                user_id=user_id,
+                server=server,
+                kind=token_kind,
+                token=token,
+                ios_app_id=ios_app_id,
+                # last_updated is to be renamed to date_created.
+                last_updated=timezone.now())
+    except IntegrityError:
         pass
 
-    return get_realm(resolve_email_to_domain(email))
+    return json_success()
 
-# Requests made to this endpoint are UNAUTHENTICATED
-@csrf_exempt
 @has_request_variables
-def lookup_endpoints_for_user(request, email=REQ()):
-    try:
-        return json_response(realm_for_email(email).deployment.endpoints)
-    except AttributeError:
-        return json_error("Cannot determine endpoint for user.", status=404)
+def unregister_remote_push_device(request: HttpRequest, entity: Union[UserProfile, RemoteZulipServer],
+                                  token: bytes=REQ(),
+                                  token_kind: int=REQ(validator=check_int),
+                                  user_id: int=REQ(),
+                                  ios_app_id: Optional[str]=None) -> HttpResponse:
+    validate_bouncer_token_request(entity, token, token_kind)
+    server = cast(RemoteZulipServer, entity)
+    deleted = RemotePushDeviceToken.objects.filter(token=token,
+                                                   kind=token_kind,
+                                                   user_id=user_id,
+                                                   server=server).delete()
+    if deleted[0] == 0:
+        return json_error(err_("Token does not exist"))
 
-def account_deployment_dispatch(request, **kwargs):
-    sso_unknown_email = False
-    if request.method == 'POST':
-        email = request.POST['username']
-        realm = realm_for_email(email)
-        try:
-            return HttpResponseRedirect(realm.deployment.base_site_url)
-        except AttributeError:
-            # No deployment found for this user/email
-            sso_unknown_email = True
+    return json_success()
 
-    template_response = django_login_page(request, **kwargs)
-    template_response.context_data['desktop_sso_dispatch'] = True
-    template_response.context_data['desktop_sso_unknown_email'] = sso_unknown_email
-    return template_response
+@has_request_variables
+def remote_server_notify_push(request: HttpRequest, entity: Union[UserProfile, RemoteZulipServer],
+                              payload: Dict[str, Any]=REQ(argument_type='body')) -> HttpResponse:
+    validate_entity(entity)
+    server = cast(RemoteZulipServer, entity)
+
+    user_id = payload['user_id']
+    gcm_payload = payload['gcm_payload']
+    apns_payload = payload['apns_payload']
+
+    android_devices = list(RemotePushDeviceToken.objects.filter(
+        user_id=user_id,
+        kind=RemotePushDeviceToken.GCM,
+        server=server
+    ))
+
+    apple_devices = list(RemotePushDeviceToken.objects.filter(
+        user_id=user_id,
+        kind=RemotePushDeviceToken.APNS,
+        server=server
+    ))
+
+    if android_devices:
+        send_android_push_notification(android_devices, gcm_payload, remote=True)
+
+    if apple_devices:
+        send_apple_push_notification(user_id, apple_devices, apns_payload, remote=True)
+
+    return json_success()

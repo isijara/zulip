@@ -1,30 +1,26 @@
-#!/usr/bin/env python2.7
 
 """
-Shows backlog count of ScheduledJobs of type Email
+Shows backlog count of ScheduledEmail
 """
 
-from __future__ import absolute_import
 
-from django.conf import settings
+from datetime import timedelta
+from typing import Any
+
 from django.core.management.base import BaseCommand
+from django.utils.timezone import now as timezone_now
 
-from zerver.models import ScheduledJob
-
-from datetime import datetime, timedelta
+from zerver.models import ScheduledEmail
 
 class Command(BaseCommand):
-    help = """Shows backlog count of ScheduledJobs of type Email
+    help = """Shows backlog count of ScheduledEmail
 (The number of currently overdue (by at least a minute) email jobs)
 
 This is run as part of the nagios health check for the deliver_email command.
-Please note that this is only relevant to the SMTP-based email delivery (no Mandrill).
 
-Usage: python2.7 manage.py print_email_delivery_backlog
+Usage: ./manage.py print_email_delivery_backlog
 """
 
-    def handle(self, *args, **options):
-        print len(ScheduledJob.objects.filter(type=ScheduledJob.EMAIL,
-                                                  scheduled_timestamp__lte=datetime.utcnow()-timedelta(minutes=1)))
-        return
-
+    def handle(self, *args: Any, **options: Any) -> None:
+        print(ScheduledEmail.objects.filter(
+            scheduled_timestamp__lte=timezone_now()-timedelta(minutes=1)).count())

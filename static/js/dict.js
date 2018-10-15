@@ -1,5 +1,9 @@
 /* Constructs a new Dict object.
  *
+ * This module primarily exists to support the fold_case option,
+ * because so many string keys in Zulip are case-insensitive (emails,
+ * stream names, topics, etc.).
+ *
  * Dict(opt) -> the new Dict will be empty
  *
  * Available options:
@@ -9,7 +13,6 @@
  *
  */
 function Dict(opts) {
-    var self = this;
     this._items = {};
     this._opts = _.extend({}, {fold_case: false}, opts);
 }
@@ -38,7 +41,7 @@ Dict.from = function Dict_from(obj, opts) {
  * passed to the Dict constructor.
  */
 Dict.from_array = function Dict_from_array(xs, opts) {
-    if (! (xs instanceof Array)) {
+    if (!(xs instanceof Array)) {
         throw new TypeError("Argument is not an array");
     }
 
@@ -54,7 +57,7 @@ Dict.prototype = {
     _munge: function Dict__munge(k) {
         if (k === undefined) {
             blueslip.error("Tried to call a Dict method with an undefined key.");
-            return undefined;
+            return;
         }
         if (this._opts.fold_case) {
             k = k.toLowerCase();
@@ -71,7 +74,7 @@ Dict.prototype = {
     get: function Dict_get(key) {
         var mapping = this._items[this._munge(key)];
         if (mapping === undefined) {
-            return undefined;
+            return;
         }
         return mapping.v;
     },
@@ -84,7 +87,6 @@ Dict.prototype = {
     // If `key` exists in the Dict, return its value.  Otherwise
     // insert `key` with a value of `value` and return `value`.
     setdefault: function Dict_setdefault(key, value) {
-        var ret;
         var mapping = this._items[this._munge(key)];
         if (mapping === undefined) {
             return this.set(key, value);
@@ -118,12 +120,20 @@ Dict.prototype = {
         return _.keys(this._items).length;
     },
 
+    is_empty: function Dict_is_empty() {
+        return _.isEmpty(this._items);
+    },
+
     // Iterates through the Dict calling f(value, key) for each (key, value) pair in the Dict
     each: function Dict_each(f) {
         return _.each(this._items, function (mapping) {
             f(mapping.v, mapping.k);
         });
-    }
+    },
+
+    clear: function Dict_clear() {
+        this._items = {};
+    },
 };
 
 }());
@@ -131,3 +141,4 @@ Dict.prototype = {
 if (typeof module !== 'undefined') {
     module.exports = Dict;
 }
+window.Dict = Dict;

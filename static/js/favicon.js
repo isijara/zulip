@@ -12,7 +12,7 @@ exports.reset = function () {
 };
 
 exports.set = function (url) {
-    if ($.browser.webkit) {
+    if (/webkit/i.test(navigator.userAgent)) {
         // Works in Chrome 22 at least.
         // Doesn't work in Firefox 10.
         $(favicon_selector).attr('href', url);
@@ -22,7 +22,7 @@ exports.set = function (url) {
         // in re-rendering the page (see #882).
         $(favicon_selector).remove();
         $('head').append($('<link>')
-            .attr('rel',  'shortcut icon')
+            .attr('rel', 'shortcut icon')
             .attr('href', url));
     }
 };
@@ -33,3 +33,4 @@ return exports;
 if (typeof module !== 'undefined') {
     module.exports = favicon;
 }
+window.favicon = favicon;

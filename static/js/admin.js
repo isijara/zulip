@@ -5,376 +5,129 @@ var exports = {};
 exports.show_or_hide_menu_item = function () {
     var item = $('.admin-menu-item').expectOne();
     if (page_params.is_admin) {
-        item.show();
+        item.find("span").text(i18n.t("Manage organization"));
     } else {
-        item.hide();
+        item.find("span").text(i18n.t("Organization settings"));
+        $(".organization-box [data-name='organization-profile']")
+            .find("input, textarea, button, select").attr("disabled", true);
+        $(".organization-box [data-name='organization-settings']")
+            .find("input, textarea, button, select").attr("disabled", true);
+        $(".organization-box [data-name='organization-permissions']")
+            .find("input, textarea, button, select").attr("disabled", true);
+        $(".organization-box [data-name='auth-methods']")
+            .find("input, button, select, checked").attr("disabled", true);
+        $(".organization-box [data-name='default-streams-list']")
+            .find("input:not(.search), button, select").attr("disabled", true);
+        $(".organization-box [data-name='filter-settings']")
+            .find("input, button, select").attr("disabled", true);
+        $(".organization-box [data-name='profile-field-settings']")
+            .find("input, button, select").attr("disabled", true);
+        $(".control-label-disabled").addClass('enabled');
     }
 };
 
-function failed_listing_users(xhr, error) {
-    loading.destroy_indicator($('#subs_page_loading_indicator'));
-    ui.report_error("Error listing users or bots", xhr, $("#administration-status"));
-}
+var admin_settings_label = {
+    // Organization settings
+    realm_allow_community_topic_editing: i18n.t("Users can edit the topic of any message"),
+    realm_allow_edit_history: i18n.t("Enable message edit history"),
+    realm_mandatory_topics: i18n.t("Require topics in stream messages"),
+    realm_inline_image_preview: i18n.t("Show previews of uploaded and linked images"),
+    realm_inline_url_embed_preview: i18n.t("Show previews of linked websites"),
+    realm_default_twenty_four_hour_time: i18n.t("24-hour time (17:00 instead of 5:00 PM)"),
+    realm_send_welcome_emails: i18n.t("Send emails introducing Zulip to new users"),
 
-function failed_listing_streams(xhr, error) {
-    ui.report_error("Error listing streams", xhr, $("#administration-status"));
-}
-
-function populate_users (realm_people_data) {
-    var users_table = $("#admin_users_table");
-    var deactivated_users_table = $("#admin_deactivated_users_table");
-    var bots_table = $("#admin_bots_table");
-    // Clear table rows, but not the table headers
-    users_table.find("tr.user_row").remove();
-    deactivated_users_table.find("tr.user_row").remove();
-    bots_table.find("tr.user_row").remove();
-
-    var active_users = [];
-    var deactivated_users = [];
-    var bots = [];
-    _.each(realm_people_data.members, function (user) {
-        user.is_active_human = user.is_active && !user.is_bot;
-        if (user.is_bot) {
-            bots.push(user);
-        } else if (user.is_active) {
-            active_users.push(user);
-        } else {
-            deactivated_users.push(user);
-        }
-    });
-
-    active_users = _.sortBy(active_users, 'full_name');
-    deactivated_users = _.sortBy(deactivated_users, 'full_name');
-    bots = _.sortBy(bots, 'full_name');
-
-    _.each(bots, function (user) {
-        bots_table.append(templates.render("admin_user_list", {user: user}));
-    });
-    _.each(active_users, function (user) {
-        users_table.append(templates.render("admin_user_list", {user: user}));
-    });
-    _.each(deactivated_users, function (user) {
-        deactivated_users_table.append(templates.render("admin_user_list", {user: user}));
-    });
-    loading.destroy_indicator($('#admin_page_users_loading_indicator'));
-    loading.destroy_indicator($('#admin_page_bots_loading_indicator'));
-    loading.destroy_indicator($('#admin_page_deactivated_users_loading_indicator'));
-}
-
-function populate_streams (streams_data) {
-    var streams_table = $("#admin_streams_table").expectOne();
-    streams_table.find("tr.stream_row").remove();
-    _.each(streams_data.streams, function (stream) {
-        streams_table.append(templates.render("admin_streams_list", {stream: stream}));
-    });
-    loading.destroy_indicator($('#admin_page_streams_loading_indicator'));
-}
+    // Organization permissions
+    realm_name_changes_disabled: i18n.t("Prevent users from changing their name"),
+    realm_email_changes_disabled : i18n.t("Prevent users from changing their email address"),
+};
 
 exports.setup_page = function () {
     var options = {
-        realm_name:                 page_params.realm_name,
-        domain:                     page_params.domain,
-        realm_restricted_to_domain: page_params.realm_restricted_to_domain,
-        realm_invite_required:      page_params.realm_invite_required,
-        realm_invite_by_admins_only: page_params.realm_invite_by_admins_only
+        custom_profile_field_types: page_params.custom_profile_field_types,
+        realm_name: page_params.realm_name,
+        realm_available_video_chat_providers: page_params.realm_available_video_chat_providers,
+        realm_description: page_params.realm_description,
+        realm_inline_image_preview: page_params.realm_inline_image_preview,
+        server_inline_image_preview: page_params.server_inline_image_preview,
+        realm_inline_url_embed_preview: page_params.realm_inline_url_embed_preview,
+        server_inline_url_embed_preview: page_params.server_inline_url_embed_preview,
+        realm_authentication_methods: page_params.realm_authentication_methods,
+        realm_create_stream_by_admins_only: page_params.realm_create_stream_by_admins_only,
+        realm_name_changes_disabled: page_params.realm_name_changes_disabled,
+        realm_email_changes_disabled: page_params.realm_email_changes_disabled,
+        realm_add_emoji_by_admins_only: page_params.realm_add_emoji_by_admins_only,
+        can_add_emojis: settings_emoji.can_add_emoji(),
+        realm_allow_community_topic_editing: page_params.realm_allow_community_topic_editing,
+        realm_message_content_edit_limit_minutes:
+            settings_org.get_realm_time_limits_in_minutes('realm_message_content_edit_limit_seconds'),
+        realm_message_content_delete_limit_minutes:
+            settings_org.get_realm_time_limits_in_minutes('realm_message_content_delete_limit_seconds'),
+        realm_message_retention_days: page_params.realm_message_retention_days,
+        realm_allow_edit_history: page_params.realm_allow_edit_history,
+        language_list: page_params.language_list,
+        realm_default_language: page_params.realm_default_language,
+        realm_waiting_period_threshold: page_params.realm_waiting_period_threshold,
+        realm_notifications_stream_id: page_params.realm_notifications_stream_id,
+        realm_signup_notifications_stream_id: page_params.realm_signup_notifications_stream_id,
+        is_admin: page_params.is_admin,
+        is_guest: page_params.is_guest,
+        realm_icon_source: page_params.realm_icon_source,
+        realm_icon_url: page_params.realm_icon_url,
+        realm_mandatory_topics: page_params.realm_mandatory_topics,
+        realm_send_welcome_emails: page_params.realm_send_welcome_emails,
+        realm_default_twenty_four_hour_time: page_params.realm_default_twenty_four_hour_time,
     };
-    var admin_tab = templates.render('admin_tab', options);
-    $("#administration").html(admin_tab);
-    $("#administration-status").expectOne().hide();
-    $("#admin-realm-name-status").expectOne().hide();
-    $("#admin-realm-restricted-to-domain-status").expectOne().hide();
-    $("#admin-realm-invite-required-status").expectOne().hide();
-    $("#admin-realm-invite-by-admins-only-status").expectOne().hide();
 
-    // create loading indicators
-    loading.make_indicator($('#admin_page_users_loading_indicator'));
-    loading.make_indicator($('#admin_page_bots_loading_indicator'));
-    loading.make_indicator($('#admin_page_streams_loading_indicator'));
-    loading.make_indicator($('#admin_page_deactivated_users_loading_indicator'));
+    options.admin_settings_label = admin_settings_label;
+    options.msg_edit_limit_dropdown_values = settings_org.msg_edit_limit_dropdown_values;
+    options.msg_delete_limit_dropdown_values = settings_org.msg_delete_limit_dropdown_values;
+    options.bot_creation_policy_values = settings_bots.bot_creation_policy_values;
+    var rendered_admin_tab = templates.render('admin_tab', options);
+    $("#settings_content .organization-box").html(rendered_admin_tab);
+    $("#settings_content .alert").removeClass("show");
 
-    // Populate users and bots tables
-    channel.get({
-        url:      '/json/users',
-        idempotent: true,
-        timeout:  10*1000,
-        success: populate_users,
-        error: failed_listing_users
-    });
+    settings_bots.update_bot_settings_tip();
+    $("#id_realm_bot_creation_policy").val(page_params.realm_bot_creation_policy);
 
-    // Populate streams table
-    channel.get({
-        url:      '/json/streams?include_public=true&include_subscribed=true',
-        timeout:  10*1000,
-        idempotent: true,
-        success: populate_streams,
-        error: failed_listing_streams
-    });
+    // Since we just swapped in a whole new page, we need to
+    // tell admin_sections nothing is loaded.
+    admin_sections.reset_sections();
 
-    // Setup click handlers
-    $(".admin_user_table").on("click", ".deactivate", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        $(".active_user_row").removeClass("active_user_row");
-
-        $(e.target).closest(".user_row").addClass("active_user_row");
-
-        var user_name = $(".active_user_row").find('.user_name').text();
-        var email = $(".active_user_row").find('.email').text();
-
-        $("#deactivation_user_modal .email").text(email);
-        $("#deactivation_user_modal .user_name").text(user_name);
-        $("#deactivation_user_modal").modal("show");
-    });
-
-    $(".admin_stream_table").on("click", ".deactivate", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        $(".active_stream_row").removeClass("active_stream_row");
-
-        $(e.target).closest(".stream_row").addClass("active_stream_row");
-
-        var stream_name = $(".active_stream_row").find('.stream_name').text();
-
-        $("#deactivation_stream_modal .stream_name").text(stream_name);
-        $("#deactivation_stream_modal").modal("show");
-    });
-
-    $(".admin_user_table").on("click", ".reactivate", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Go up the tree until we find the user row, then grab the email element
-        $(".active_user_row").removeClass("active_user_row");
-        $(e.target).closest(".user_row").addClass("active_user_row");
-
-        var email = $(".active_user_row").find('.email').text();
-        channel.post({
-            url: '/json/users/' + $(".active_user_row").find('.email').text() + "/reactivate",
-            error: function (xhr, error_type) {
-                if (xhr.status.toString().charAt(0) === "4") {
-                    $(".active_user_row button").closest("td").html(
-                        $("<p>").addClass("text-error").text($.parseJSON(xhr.responseText).msg)
-                    );
-                } else {
-                     $(".active_user_row button").text("Failed!");
-                }
-            },
-            success: function () {
-                var row = $(".active_user_row");
-                var button = $(".active_user_row button.reactivate");
-                button.addClass("btn-danger");
-                button.removeClass("btn-warning");
-                button.addClass("deactivate");
-                button.removeClass("reactivate");
-                button.text("Deactivate");
-                row.removeClass("deactivated_user");
-            }
-        });
-    });
-
-    $("#id_realm_invite_required").change(function () {
-        if(this.checked) {
-            $("#id_realm_invite_by_admins_only").removeAttr("disabled");
-            $("#id_realm_invite_by_admins_only_label").removeClass("control-label-disabled");
-        } else {
-            $("#id_realm_invite_by_admins_only").attr("disabled", true);
-            $("#id_realm_invite_by_admins_only_label").addClass("control-label-disabled");
+    var tab = (function () {
+        var tab = false;
+        var hash_sequence = window.location.hash.split(/\//);
+        if (/#*(organization)/.test(hash_sequence[0])) {
+            tab = hash_sequence[1];
+            return tab || settings_panel_menu.org_settings.current_tab();
         }
-    });
+        return tab;
+    }());
 
-    $(".administration").on("submit", "form.admin-realm", function (e) {
-        var name_status = $("#admin-realm-name-status").expectOne();
-        var restricted_to_domain_status = $("#admin-realm-restricted-to-domain-status").expectOne();
-        var invite_required_status = $("#admin-realm-invite-required-status").expectOne();
-        var invite_by_admins_only_status = $("#admin-realm-invite-by-admins-only-status").expectOne();
-        name_status.hide();
-        restricted_to_domain_status.hide();
-        invite_required_status.hide();
-        invite_by_admins_only_status.hide();
+    if (tab) {
+        exports.launch_page(tab);
+        settings_toggle.highlight_toggle('organization');
+    }
 
-        e.preventDefault();
-        e.stopPropagation();
 
-        var new_name = $("#id_realm_name").val();
-        var new_restricted = $("#id_realm_restricted_to_domain").prop("checked");
-        var new_invite = $("#id_realm_invite_required").prop("checked");
-        var new_invite_by_admins_only = $("#id_realm_invite_by_admins_only").prop("checked");
+    $("#id_realm_default_language").val(page_params.realm_default_language);
 
-        var url = "/json/realm";
-        var data = {
-            name: JSON.stringify(new_name),
-            restricted_to_domain: JSON.stringify(new_restricted),
-            invite_required: JSON.stringify(new_invite),
-            invite_by_admins_only: JSON.stringify(new_invite_by_admins_only)
-        };
+    // Do this after calling the setup_up methods, so that we can
+    // disable any dynamically rendered elements.
+    exports.show_or_hide_menu_item();
+};
 
-        channel.patch({
-            url: url,
-            data: data,
-            success: function (data) {
-                if (data.name !== undefined) {
-                    ui.report_success("Name changed!", name_status);
-                }
-                if (data.restricted_to_domain !== undefined) {
-                    if (data.restricted_to_domain) {
-                        ui.report_success("New users must have @" + page_params.domain + " e-mails!", restricted_to_domain_status);
-                    }
-                    else {
-                        ui.report_success("New users may have arbitrary e-mails!", restricted_to_domain_status);
-                    }
-                }
-                if (data.invite_required !== undefined) {
-                    if (data.invite_required) {
-                        ui.report_success("New users must be invited by e-mail!", invite_required_status);
-                    }
-                    else {
-                        ui.report_success("New users may sign up online!", invite_required_status);
-                    }
-                }
-                if (data.invite_by_admins_only !== undefined) {
-                    if (data.invite_by_admins_only) {
-                        ui.report_success("New users must be invited by an admin!", invite_by_admins_only_status);
-                    }
-                    else {
-                        ui.report_success("Any user may now invite new users!", invite_by_admins_only_status);
-                    }
-                }
-            },
-            error: function (xhr, error) {
-                ui.report_error("Failed!", xhr, name_status);
-            }
-        });
-    });
+exports.launch_page = function (tab) {
+    var $active_tab = $("#settings_overlay_container li[data-section='" + tab + "']");
 
-    $(".admin_user_table").on("click", ".make-admin", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Go up the tree until we find the user row, then grab the email element
-        $(".active_user_row").removeClass("active_user_row");
-        $(e.target).closest(".user_row").addClass("active_user_row");
-        var email = $(".active_user_row").find('.email').text();
-
-        var url = "/json/users/" + email;
-        var data = {
-            is_admin: JSON.stringify(true)
-        };
-
-        channel.patch({
-            url: url,
-            data: data,
-            success: function () {
-                var row = $(".active_user_row");
-                var button = $(".active_user_row button.make-admin");
-                button.addClass("btn-danger");
-                button.removeClass("btn-warning");
-                button.addClass("remove-admin");
-                button.removeClass("make-admin");
-                button.text("Remove admin");
-            },
-            error: function (xhr, error) {
-                var status = $(".active_user_row .admin-user-status");
-                ui.report_error("Failed!", xhr, status);
-            }
-        });
-    });
-
-    $(".admin_user_table").on("click", ".remove-admin", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Go up the tree until we find the user row, then grab the email element
-        $(".active_user_row").removeClass("active_user_row");
-        $(e.target).closest(".user_row").addClass("active_user_row");
-        var email = $(".active_user_row").find('.email').text();
-
-        var url = "/json/users/" + email;
-        var data = {
-            is_admin: JSON.stringify(false)
-        };
-
-        channel.patch({
-            url: url,
-            data: data,
-            success: function () {
-                var row = $(".active_user_row");
-                var button = $(".active_user_row button.remove-admin");
-                button.addClass("btn-warning");
-                button.removeClass("btn-danger");
-                button.addClass("make-admin");
-                button.removeClass("remove-admin");
-                button.text("Make admin");
-            },
-            error: function (xhr, error) {
-                var status = $(".active_user_row .admin-user-status");
-                ui.report_error("Failed!", xhr, status);
-            }
-        });
-    });
-
-    $("#do_deactivate_user_button").click(function (e) {
-        if ($("#deactivation_user_modal .email").html() !== $(".active_user_row").find('.email').text()) {
-            blueslip.error("User deactivation canceled due to non-matching fields.");
-            ui.report_message("Deactivation encountered an error. Please reload and try again.",
-               $("#home-error"), 'alert-error');
-        }
-        $("#deactivation_user_modal").modal("hide");
-        $(".active_user_row button").prop("disabled", true).text("Working…");
-        channel.del({
-            url: '/json/users/' + $(".active_user_row").find('.email').text(),
-            error: function (xhr, error_type) {
-                if (xhr.status.toString().charAt(0) === "4") {
-                    $(".active_user_row button").closest("td").html(
-                        $("<p>").addClass("text-error").text($.parseJSON(xhr.responseText).msg)
-                    );
-                } else {
-                     $(".active_user_row button").text("Failed!");
-                }
-            },
-            success: function () {
-                var row = $(".active_user_row");
-                var button = $(".active_user_row button.deactivate");
-                button.prop("disabled", false);
-                button.addClass("btn-warning");
-                button.removeClass("btn-danger");
-                button.addClass("reactivate");
-                button.removeClass("deactivate");
-                button.text("Reactivate");
-                row.addClass("deactivated_user");
-                row.find(".user-admin-settings").hide();
-            }
-        });
-    });
-
-    $("#do_deactivate_stream_button").click(function (e) {
-        if ($("#deactivation_stream_modal .stream_name").text() !== $(".active_stream_row").find('.stream_name').text()) {
-            blueslip.error("Stream deactivation canceled due to non-matching fields.");
-            ui.report_message("Deactivation encountered an error. Please reload and try again.",
-               $("#home-error"), 'alert-error');
-        }
-        $("#deactivation_stream_modal").modal("hide");
-        $(".active_stream_row button").prop("disabled", true).text("Working…");
-        channel.del({
-            url: '/json/streams/' + encodeURIComponent($(".active_stream_row").find('.stream_name').text()),
-            error: function (xhr, error_type) {
-                if (xhr.status.toString().charAt(0) === "4") {
-                    $(".active_stream_row button").closest("td").html(
-                        $("<p>").addClass("text-error").text($.parseJSON(xhr.responseText).msg)
-                    );
-                } else {
-                     $(".active_stream_row button").text("Failed!");
-                }
-            },
-            success: function () {
-                var row = $(".active_stream_row");
-                row.remove();
-            }
-        });
-    });
+    overlays.open_settings();
+    $active_tab.click();
 };
 
 return exports;
 
 }());
+
+if (typeof module !== 'undefined') {
+    module.exports = admin;
+}
+window.admin = admin;

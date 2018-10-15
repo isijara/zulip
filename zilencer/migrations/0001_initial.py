@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
-from django.db import models, migrations
-
+from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
@@ -19,7 +16,7 @@ class Migration(migrations.Migration):
                 ('api_key', models.CharField(max_length=32, null=True)),
                 ('base_api_url', models.CharField(max_length=128)),
                 ('base_site_url', models.CharField(max_length=128)),
-                ('realms', models.ManyToManyField(related_name=b'_deployments', to='zerver.Realm')),
+                ('realms', models.ManyToManyField(related_name='_deployments', to='zerver.Realm')),
             ],
             options={
             },

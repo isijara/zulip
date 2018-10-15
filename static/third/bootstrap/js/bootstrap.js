@@ -1033,7 +1033,9 @@
       }
 
     , removeBackdrop: function () {
-        this.$backdrop.remove()
+        if (this.$backdrop && this.$backdrop.remove) {
+          this.$backdrop.remove();
+        }
         this.$backdrop = null
       }
 
@@ -1841,10 +1843,10 @@
 
     constructor: Typeahead
 
-  , select: function () {
+  , select: function (e) {
       var val = this.$menu.find('.active').data('typeahead-value')
       this.$element
-        .val(this.updater(val))
+        .val(this.updater(val, e))
         .change()
       return this.hide()
     }
@@ -1872,6 +1874,9 @@
         height: this.$element[0].offsetHeight
       })
 
+      // Zulip patch: Workaround for iOS safari problems
+      pos.top = this.$element.offset().top;
+
       var top_pos = pos.top + pos.height
       if (this.dropup) {
         top_pos = pos.top - this.$menu.outerHeight()
@@ -1896,7 +1901,7 @@
   , lookup: function (event) {
       var items
 
-      this.query = this.$element.val()
+      this.query = this.$element.is("[contenteditable]") ? this.$element.text() :  this.$element.val();
 
       if (!this.options.helpOnEmptyStrings) {
         if (!this.query || this.query.length < this.options.minLength) {
@@ -2041,7 +2046,8 @@
           break
       }
 
-      if (this.options.stopAdvance || (e.keyCode != 9 && e.keyCode != 13)) {
+      if ((this.options.stopAdvance || (e.keyCode != 9 && e.keyCode != 13))
+          && $.inArray(e.keyCode, this.options.advanceKeyCodes)) {
           e.stopPropagation()
       }
     }
@@ -2065,7 +2071,7 @@
         case 9: // tab
         case 13: // enter
           if (!this.shown) return
-          this.select()
+          this.select(e)
           break
 
         case 27: // escape
@@ -2077,7 +2083,8 @@
           this.lookup()
       }
 
-      if (this.options.stopAdvance || (e.keyCode != 9 && e.keyCode != 13)) {
+      if ((this.options.stopAdvance || (e.keyCode != 9 && e.keyCode != 13))
+          && $.inArray(e.keyCode, this.options.advanceKeyCodes)) {
           e.stopPropagation()
       }
 
@@ -2096,7 +2103,7 @@
   , click: function (e) {
       e.stopPropagation()
       e.preventDefault()
-      this.select()
+      this.select(e)
     }
 
   , mouseenter: function (e) {
@@ -2128,6 +2135,7 @@
   , minLength: 1
   , stopAdvance: false
   , dropup: false
+  , advanceKeyCodes: []
   }
 
   $.fn.typeahead.Constructor = Typeahead
